@@ -14,7 +14,7 @@ namespace Titan.Infra
 {
     public class TitanStack : Stack
     {
-        public TitanStack(Constructs.Construct scope, string id, IStackProps? props = null) : base(scope, id, props)
+        public TitanStack(Construct scope, string id, IStackProps? props = null) : base(scope, id, props)
         {
             // 1. VPC: MaxAzs = 2, Public and Private subnets
             var vpc = new Vpc(this, "TitanVpc", new VpcProps
@@ -68,6 +68,7 @@ namespace Titan.Infra
                 MemoryLimitMiB = 1024,
                 DesiredCount = 1,
                 PublicLoadBalancer = true,
+                AssignPublicIp = true, // Required for Fargate in public subnets or to reach internet if no NAT
                 ListenerPort = 80,
                 TaskImageOptions = new ApplicationLoadBalancedTaskImageOptions
                 {
@@ -82,7 +83,8 @@ namespace Titan.Infra
                 CloudMapOptions = new CloudMapOptions
                 {
                     Name = "titan-master",
-                    CloudMapNamespace = dnsNamespace
+                    CloudMapNamespace = dnsNamespace,
+                    DnsRecordType = DnsRecordType.A, // Ensure A record is created
                 }
             });
 
@@ -120,7 +122,7 @@ namespace Titan.Infra
             {
                 Cluster = cluster,
                 TaskDefinition = workerTaskDef,
-                VpcSubnets = new SubnetSelection { SubnetType = SubnetType.PRIVATE_WITH_NAT },
+                VpcSubnets = new SubnetSelection { SubnetType = SubnetType.PRIVATE_WITH_EGRESS },
                 DesiredCount = 1
             });
 

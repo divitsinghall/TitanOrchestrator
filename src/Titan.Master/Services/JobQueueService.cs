@@ -10,7 +10,20 @@ public class JobQueueService
     private readonly ILogger<JobQueueService> _logger;
     private readonly IConnectionMultiplexer _redis;
     private readonly ConcurrentQueue<JobRequest> _jobQueue = new();
-    private readonly ConcurrentDictionary<string, IServerStreamWriter<JobRequest>> _workerStreams = new();
+    
+    // Wrapper class to hold the stream and a semaphore for thread safety
+    private class WorkerConnection
+    {
+        public IServerStreamWriter<JobRequest> Stream { get; }
+        public SemaphoreSlim Lock { get; } = new(1, 1);
+
+        public WorkerConnection(IServerStreamWriter<JobRequest> stream)
+        {
+            Stream = stream;
+        }
+    }
+
+    private readonly ConcurrentDictionary<string, WorkerConnection> _workerStreams = new();
 
     public JobQueueService(ILogger<JobQueueService> logger, IConnectionMultiplexer redis)
     {
@@ -20,7 +33,7 @@ public class JobQueueService
 
     public async Task RegisterWorker(string workerId, IServerStreamWriter<JobRequest> stream)
     {
-        _workerStreams[workerId] = stream;
+        _workerStreams[workerId] = new WorkerConnection(stream);
         var db = _redis.GetDatabase();
         await db.StringSetAsync($"worker:{workerId}", "Idle");
         _logger.LogInformation("Worker {WorkerId} registered and marked Idle.", workerId);
@@ -74,7 +87,7 @@ public class JobQueueService
     {
         if (_jobQueue.TryDequeue(out var job))
         {
-            if (_workerStreams.TryGetValue(workerId, out var stream))
+            if (_workerStreams.TryGetValue(workerId, out var connection))
             {
                 // Mark busy first (optimistic)
                 var db = _redis.GetDatabase();
@@ -82,7 +95,17 @@ public class JobQueueService
 
                 try
                 {
-                    await stream.WriteAsync(job);
+                    // Thread-safe write
+                    await connection.Lock.WaitAsync();
+                    try
+                    {
+                        await connection.Stream.WriteAsync(job);
+                    }
+                    finally
+                    {
+                        connection.Lock.Release();
+                    }
+                    
                     _logger.LogInformation("Job {JobId} dispatched to Worker {WorkerId}", job.JobId, workerId);
                 }
                 catch (Exception ex)
