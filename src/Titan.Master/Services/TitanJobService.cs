@@ -30,7 +30,7 @@ public class TitanJobService : JobService.JobServiceBase
                     int cores = firstMessage.Connect.CpuCores;
                     _logger.LogInformation("Worker {WorkerId} connected with {Cores} cores.", workerId, cores);
                     
-                    _jobQueue.RegisterWorker(workerId, responseStream);
+                    await _jobQueue.RegisterWorker(workerId, responseStream);
                 }
                 else
                 {

@@ -18,15 +18,15 @@ public class JobQueueService
         _redis = redis;
     }
 
-    public void RegisterWorker(string workerId, IServerStreamWriter<JobRequest> stream)
+    public async Task RegisterWorker(string workerId, IServerStreamWriter<JobRequest> stream)
     {
         _workerStreams[workerId] = stream;
         var db = _redis.GetDatabase();
-        db.StringSet($"worker:{workerId}", "Idle");
+        await db.StringSetAsync($"worker:{workerId}", "Idle");
         _logger.LogInformation("Worker {WorkerId} registered and marked Idle.", workerId);
         
         // Check if there are pending jobs
-        TryDispatchJobToWorker(workerId);
+        await TryDispatchJobToWorkerAsync(workerId);
     }
 
     public void UnregisterWorker(string workerId)
@@ -52,7 +52,7 @@ public class JobQueueService
         if (!isBusy)
         {
             // If worker became idle, try to give it a job
-            TryDispatchJobToWorker(workerId);
+            await TryDispatchJobToWorkerAsync(workerId);
         }
     }
 
@@ -65,12 +65,12 @@ public class JobQueueService
             var status = await db.StringGetAsync($"worker:{workerId}");
             if (status == "Idle")
             {
-                TryDispatchJobToWorker(workerId);
+                await TryDispatchJobToWorkerAsync(workerId);
             }
         }
     }
 
-    private void TryDispatchJobToWorker(string workerId)
+    private async Task TryDispatchJobToWorkerAsync(string workerId)
     {
         if (_jobQueue.TryDequeue(out var job))
         {
@@ -78,14 +78,11 @@ public class JobQueueService
             {
                 // Mark busy first (optimistic)
                 var db = _redis.GetDatabase();
-                db.StringSet($"worker:{workerId}", "Busy");
+                await db.StringSetAsync($"worker:{workerId}", "Busy");
 
                 try
                 {
-                    stream.WriteAsync(job); // Fire and forget write, or await? 
-                    // WriteAsync is awaitable. But we are in a void/sync context here if called from RegisterWorker.
-                    // Better to make this async or fire-and-forget safely.
-                    // For simplicity in this scaffold, we'll assume it works or handle errors in the stream loop.
+                    await stream.WriteAsync(job);
                     _logger.LogInformation("Job {JobId} dispatched to Worker {WorkerId}", job.JobId, workerId);
                 }
                 catch (Exception ex)
@@ -93,7 +90,7 @@ public class JobQueueService
                     _logger.LogError(ex, "Failed to dispatch job to worker {WorkerId}", workerId);
                     // Re-queue job
                     _jobQueue.Enqueue(job);
-                    db.StringSet($"worker:{workerId}", "Idle"); // Revert status
+                    await db.StringSetAsync($"worker:{workerId}", "Idle"); // Revert status
                 }
             }
             else
