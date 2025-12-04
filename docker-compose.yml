@@ -1,0 +1,40 @@
+services:
+  titan-redis:
+    image: redis:latest
+    ports:
+      - "6379:6379"
+
+  titan-master:
+    build:
+      context: .
+      dockerfile: src/Titan.Master/Dockerfile
+    ports:
+      - "5050:5000"
+      - "5001:5001"
+    environment:
+      - ConnectionStrings__Redis=titan-redis:6379
+      - ASPNETCORE_URLS=http://+:5000;http://+:5001
+      # For gRPC over HTTP/2 without TLS in dev
+      - ASPNETCORE_Kestrel__Endpoints__Http__Url=http://+:5000
+      - ASPNETCORE_Kestrel__Endpoints__Grpc__Url=http://+:5001
+      - ASPNETCORE_Kestrel__Endpoints__Grpc__Protocols=Http2
+    depends_on:
+      - titan-redis
+
+  titan-worker-1:
+    build:
+      context: .
+      dockerfile: src/Titan.Worker/Dockerfile
+    environment:
+      - MasterUrl=http://titan-master:5001
+    depends_on:
+      - titan-master
+
+  titan-worker-2:
+    build:
+      context: .
+      dockerfile: src/Titan.Worker/Dockerfile
+    environment:
+      - MasterUrl=http://titan-master:5001
+    depends_on:
+      - titan-master

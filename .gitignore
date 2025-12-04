@@ -1,0 +1,12 @@
+# .NET
+bin/
+obj/
+.vs/
+*.user
+*.lock.json
+
+# Secrets
+appsettings.Development.json
+
+# OS
+.DS_Store

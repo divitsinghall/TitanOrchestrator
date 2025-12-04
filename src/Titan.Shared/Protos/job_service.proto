@@ -1,0 +1,33 @@
+syntax = "proto3";
+
+option csharp_namespace = "Titan.Shared.Protos";
+
+package titan;
+
+service JobService {
+  // Bi-directional streaming
+  rpc Connect (stream WorkerMessage) returns (stream JobRequest);
+}
+
+message WorkerMessage {
+  oneof message {
+    ConnectRequest connect = 1;
+    JobResult result = 2;
+  }
+}
+
+message ConnectRequest {
+  string worker_id = 1;
+  int32 cpu_cores = 2;
+}
+
+message JobRequest {
+  string job_id = 1;
+  string payload = 2;
+}
+
+message JobResult {
+  string job_id = 1;
+  bool success = 2;
+  string message = 3;
+}
